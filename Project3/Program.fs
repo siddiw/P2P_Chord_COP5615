@@ -48,7 +48,7 @@ let mutable numRequests = 0
 let mutable m = 6
 let mutable firstNodeRef = null
 let mutable secondNodeRef = null
-let StabilizeCycletimeMs = 5000000.0
+let StabilizeCycletimeMs = 5000.0
 
 let mutable hashSpace = pown 2 m |> int
 
@@ -56,10 +56,6 @@ type FingerTableEntry(x:int, y:IActorRef) as this =
     let id = x
     let idRef = y
     member this.GetId() = x
-
-let stabilize ()=
-    // called periodically
-    printfn "\n Stabilize"
 
 let fix_fingers ()=
     // called periodically
@@ -137,36 +133,31 @@ let ChordNode (myId:int) (mailbox:Actor<_>) =
                     myFingerTable <- a :: myFingerTable
                 chordSystem.Scheduler.ScheduleTellRepeatedly(TimeSpan.FromSeconds(0.0),TimeSpan.FromMilliseconds(StabilizeCycletimeMs), mailbox.Self, Stabilize)
                 printfn "\n %d found successor = %d" myId mySuccessor
+                mySuccessorRef <! Notify(myId, mailbox.Self)
 
             //| Join (id, ref) ->
             //    mailbox.Self <! FindSuccessor(id, ref)
             | FindSuccessor(newId, newRef) ->
                 printfn "\n Finding successor for %d" newId
+                let mutable tempVal = newId
+                if newId < myId then tempVal <- newId + hashSpace
 
-                
-                    
-                if newId >= myId then 
-                    if newId <= mySuccessor then 
-                        // tell id that this is your successor
-                        // find reference of id and then send SuccessorFound() message to it
-                        newRef <! YourSuccessor(mySuccessor, mySuccessorRef)
-                        printfn "\n Now sending Found successor for %d" newId
-                    else 
-                        mySuccessorRef <! FindSuccessor(newId, newRef)
-                        // CLOSEST PRECEDING NODE
-                        (*for x in m .. 1 do
-                            if (myFingerTable.[x] >=< (myId, newId)) then 
-                                // find ref of actor myFingerTable[x] and send FindSuccessor to it
-                                printfn "\n %d is telling %d to find successor for %d" myId myFingerTable.[x] newId*)
                 if mySuccessor < myId && newId > myId then 
                     newRef <! YourSuccessor(mySuccessor, mySuccessorRef)
                     printfn "\n Successor of %d is %d" newId mySuccessor
-
-                (*if newId < myId then
-                    if newId > myPredecessor then 
-                        newRef <! YourSuccessor(myId, mailbox.Self)
-                    else
-                        myPredecessorRef <! FindSuccessor(newId, newRef) *)
+                //if newId >= myId then 
+                elif tempVal <= mySuccessor then 
+                    // tell id that this is your successor
+                    // find reference of id and then send SuccessorFound() message to it
+                    newRef <! YourSuccessor(mySuccessor, mySuccessorRef)
+                    printfn "\n Now sending Found successor for %d" tempVal
+                else 
+                    mySuccessorRef <! FindSuccessor(newId, newRef)
+                    // CLOSEST PRECEDING NODE
+                    (*for x in m .. 1 do
+                        if (myFingerTable.[x] >=< (myId, newId)) then 
+                            // find ref of actor myFingerTable[x] and send FindSuccessor to it
+                            printfn "\n %d is telling %d to find successor for %d" myId myFingerTable.[x] newId*)
 
             | _ -> ()
 
@@ -192,7 +183,7 @@ let MainActor (mailbox:Actor<_>) =
             match message with 
             | StartAlgorithm(numNodes, numRequests) ->
                 //firstNodeId <- Random().Next(hashSpace)
-                firstNodeId <- 1
+                firstNodeId <- 42
                 firstNodeRef <- spawn chordSystem (sprintf "%d" firstNodeId) (ChordNode firstNodeId)
                 // Second Node
                 //secondNodeId <- Random().Next(hashSpace)
@@ -205,7 +196,6 @@ let MainActor (mailbox:Actor<_>) =
                 tempNodeId <- 14
                 tempNodeRef <- spawn chordSystem (sprintf "%d" tempNodeId) (ChordNode tempNodeId)
                 firstNodeRef <! FindSuccessor(tempNodeId, tempNodeRef)
-
 
                 tempNodeId <- 21
                 tempNodeRef <- spawn chordSystem (sprintf "%d" tempNodeId) (ChordNode tempNodeId)
