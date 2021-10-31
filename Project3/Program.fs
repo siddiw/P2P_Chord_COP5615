@@ -16,7 +16,17 @@ let configuration =
             log-dead-letters-during-shutdown = off
         }")
 
-let inline (>=<) a (b,c) = a >= b && a<= c
+type Node(x: int, y:int) as this =
+    let id =x
+    let other = y
+    member this.GetId() = x
+    
+
+
+let a = [Node(4,5)]
+
+for i in a do
+    printfn "%d" (i.GetId())
 
 type MainCommands =
     | StartAlgorithm of (int*int)
@@ -26,8 +36,8 @@ type MainCommands =
     | FindSuccessor of (int*IActorRef)
     | TellYourPredecessor
     | Join2 of (int*int)
-    | TellingPredecessor of (int*IActorRef)
-    | RequestingPredecessor
+    | PredecessorResponse of (int*IActorRef)
+    | PredecessorRequest
     | YourSuccessor of (int*IActorRef)
 
 let chordSystem = ActorSystem.Create("ChordSystem", configuration)
@@ -35,18 +45,17 @@ let mutable mainActorRef = null
 
 let mutable numNodes = 0
 let mutable numRequests = 0
-let mutable m = 160
+let mutable m = 6
 let mutable firstNodeRef = null
 let mutable secondNodeRef = null
-let StabilizeCycletimeMs = 50.0
+let StabilizeCycletimeMs = 5000000.0
 
 let mutable hashSpace = pown 2 m |> int
 
-
-type fingerTable_entry =
-    struct
-        val chordId: int64
-    end
+type FingerTableEntry(x:int, y:IActorRef) as this =
+    let id = x
+    let idRef = y
+    member this.GetId() = x
 
 let stabilize ()=
     // called periodically
@@ -94,34 +103,70 @@ let ChordNode (myId:int) (mailbox:Actor<_>) =
                 mySuccessorRef <- otherRef
                 myPredecessorRef <- otherRef
                 chordSystem.Scheduler.ScheduleTellRepeatedly(TimeSpan.FromSeconds(0.0),TimeSpan.FromMilliseconds(StabilizeCycletimeMs), mailbox.Self, Stabilize)
+                printfn "\n %d added %d as predecessor and %d as successor" myId myPredecessor mySuccessor
             | Notify(predecessorId, predecessorRef) ->
                 //if predecessorId > myPredecessor then
                     myPredecessor <- predecessorId
                     myPredecessorRef <- predecessorRef
             | Stabilize ->
-                printfn "\n Stabilize"
+                printfn "\n %d Stabilize" myId
                 // Ask successor for its predecessor and wait
-                mySuccessorRef <! RequestingPredecessor
-            | TellingPredecessor(predecessorOfSuccessor, itsRef) ->
+                mySuccessorRef <! PredecessorRequest
+
+            | PredecessorResponse(predecessorOfSuccessor, itsRef) ->    
+                printfn "\n PredecessorResponse of %d = %d" myId predecessorOfSuccessor
+                
                 if predecessorOfSuccessor <> myId then
                      mySuccessor <- predecessorOfSuccessor
                      mySuccessorRef <- itsRef
+                printfn "\n predecessor of %d = %d" myId myPredecessor
+                printfn "\n successor of %d = %d" myId mySuccessor
                 // Notify mysuccessor
                 mySuccessorRef <! Notify(myId, mailbox.Self)
-            | RequestingPredecessor->    
+            | PredecessorRequest->    
                 // Find my successor ref and send Notify
-                sender <! TellingPredecessor(myPredecessor, myPredecessorRef)
+                printfn "\n %d sending Precedeccsor Response to %s" myId sender.Path.Name
+                sender <! PredecessorResponse(myPredecessor, myPredecessorRef)
+            | YourSuccessor(id, ref) ->
+                mySuccessor <- id
+                mySuccessorRef <- ref
+                // initially input successor id and ref in all m places of finger table 
+                for x in 0..m do
+                    //myFingerTable <- myFingerTable :: [mySuccessor;mySuccessorRef]
+                    let a = [FingerTableEntry(id, ref)]
+                    myFingerTable <- a :: myFingerTable
+                chordSystem.Scheduler.ScheduleTellRepeatedly(TimeSpan.FromSeconds(0.0),TimeSpan.FromMilliseconds(StabilizeCycletimeMs), mailbox.Self, Stabilize)
+                printfn "\n %d found successor = %d" myId mySuccessor
+
+            //| Join (id, ref) ->
+            //    mailbox.Self <! FindSuccessor(id, ref)
             | FindSuccessor(newId, newRef) ->
-                if newId >=< (myId, mySuccessor) then 
-                    // tell id that this is your successor
-                    // find reference of id and then send SuccessorFound() message to it
-                    newRef <! YourSuccessor(myId, mailbox.Self)
-                else 
-                    // CLOSEST PRECEDING NODE
-                    for x in m .. 1 do
-                        if (myFingerTable.[x] >=< (myId, newId)) then 
-                            // find ref of actor myFingerTable[x] and send FindSuccessor to it
-                            printfn "\n %d is telling %d to find successor for %d" myId myFingerTable.[x] newId
+                printfn "\n Finding successor for %d" newId
+
+                
+                    
+                if newId >= myId then 
+                    if newId <= mySuccessor then 
+                        // tell id that this is your successor
+                        // find reference of id and then send SuccessorFound() message to it
+                        newRef <! YourSuccessor(mySuccessor, mySuccessorRef)
+                        printfn "\n Now sending Found successor for %d" newId
+                    else 
+                        mySuccessorRef <! FindSuccessor(newId, newRef)
+                        // CLOSEST PRECEDING NODE
+                        (*for x in m .. 1 do
+                            if (myFingerTable.[x] >=< (myId, newId)) then 
+                                // find ref of actor myFingerTable[x] and send FindSuccessor to it
+                                printfn "\n %d is telling %d to find successor for %d" myId myFingerTable.[x] newId*)
+                if mySuccessor < myId && newId > myId then 
+                    newRef <! YourSuccessor(mySuccessor, mySuccessorRef)
+                    printfn "\n Successor of %d is %d" newId mySuccessor
+
+                (*if newId < myId then
+                    if newId > myPredecessor then 
+                        newRef <! YourSuccessor(myId, mailbox.Self)
+                    else
+                        myPredecessorRef <! FindSuccessor(newId, newRef) *)
 
             | _ -> ()
 
@@ -136,6 +181,9 @@ let MainActor (mailbox:Actor<_>) =
     let mutable topologyBuilt = 0
     let mutable firstNodeId = 0
     let mutable secondNodeId = 0
+    let mutable tempNodeId = 0
+    let mutable tempNodeRef = null
+
 
     let rec loop () = 
         actor {
@@ -143,16 +191,26 @@ let MainActor (mailbox:Actor<_>) =
 
             match message with 
             | StartAlgorithm(numNodes, numRequests) ->
-                firstNodeId <- Random().Next(hashSpace)
+                //firstNodeId <- Random().Next(hashSpace)
+                firstNodeId <- 1
                 firstNodeRef <- spawn chordSystem (sprintf "%d" firstNodeId) (ChordNode firstNodeId)
                 // Second Node
-                secondNodeId <- Random().Next(hashSpace)
+                //secondNodeId <- Random().Next(hashSpace)
+                secondNodeId <- 8
                 secondNodeRef <- spawn chordSystem (sprintf "%d" secondNodeId) (ChordNode secondNodeId)
                 firstNodeRef <! Create(secondNodeId, secondNodeRef)
                 secondNodeRef <! Create(firstNodeId, firstNodeRef)
 
+                // add remaining nodes
+                tempNodeId <- 14
+                tempNodeRef <- spawn chordSystem (sprintf "%d" tempNodeId) (ChordNode tempNodeId)
+                firstNodeRef <! FindSuccessor(tempNodeId, tempNodeRef)
 
-            
+
+                tempNodeId <- 21
+                tempNodeRef <- spawn chordSystem (sprintf "%d" tempNodeId) (ChordNode tempNodeId)
+                firstNodeRef <! FindSuccessor(tempNodeId, tempNodeRef)
+                
 
             | _ -> ()
 
@@ -165,12 +223,12 @@ let MainActor (mailbox:Actor<_>) =
 
 [<EntryPoint>]
 let main argv =
-    if (argv.Length <> 2) then printfn "Starting with default values" 
-    else 
-        numNodes <-  argv.[0] |> int
-        numRequests <- argv.[1] |> int
+    numNodes <-  argv.[0] |> int
+    numRequests <- argv.[1] |> int
 
     mainActorRef <- spawn chordSystem "MainActor" MainActor
     mainActorRef <! StartAlgorithm(numNodes, numRequests)
+
+    chordSystem.WhenTerminated.Wait()
         
     0
