@@ -147,37 +147,20 @@ let MainActor (mailbox:Actor<_>) =
 
             match message with 
             | StartAlgorithm(numNodes, numRequests) ->
-                //firstNodeId <- Random().Next(hashSpace)
-                firstNodeId <- 42
+                firstNodeId <- Random().Next(hashSpace)
                 firstNodeRef <- spawn chordSystem (sprintf "%d" firstNodeId) (ChordNode firstNodeId)
                 // Second Node
-                //secondNodeId <- Random().Next(hashSpace)
-                secondNodeId <- 8
+                secondNodeId <- Random().Next(hashSpace)
                 secondNodeRef <- spawn chordSystem (sprintf "%d" secondNodeId) (ChordNode secondNodeId)
                 firstNodeRef <! Create(secondNodeId, secondNodeRef)
                 secondNodeRef <! Create(firstNodeId, firstNodeRef)
 
-                System.Threading.Thread.Sleep(10000)                // add remaining nodes
-                //tempNodeId <- Random().Next(1, hashSpace)
-                tempNodeId <- 30
-                printfn "\n\n ADDING %d" tempNodeId
-                tempNodeRef <- spawn chordSystem (sprintf "%d" tempNodeId) (ChordNode tempNodeId)
-                firstNodeRef <! FindSuccessor(tempNodeId, tempNodeRef)
-
-                System.Threading.Thread.Sleep(800)
-                tempNodeId <- 55
-                //tempNodeId <- Random().Next(1, hashSpace)
-                printfn "\n\n ADDING %d" tempNodeId
-                tempNodeRef <- spawn chordSystem (sprintf "%d" tempNodeId) (ChordNode tempNodeId)
-                firstNodeRef <! FindSuccessor(tempNodeId, tempNodeRef) 
-
-
-                System.Threading.Thread.Sleep(900)
-                tempNodeId <- 61
-                //tempNodeId <- Random().Next(1, hashSpace)
-                printfn "\n\n ADDING %d" tempNodeId
-                tempNodeRef <- spawn chordSystem (sprintf "%d" tempNodeId) (ChordNode tempNodeId)
-                firstNodeRef <! FindSuccessor(tempNodeId, tempNodeRef) 
+                for x in 3..numNodes do
+                    System.Threading.Thread.Sleep(8000)
+                    tempNodeId <- Random().Next(1, hashSpace)
+                    printfn "\n\n ADDING %d" tempNodeId
+                    tempNodeRef <- spawn chordSystem (sprintf "%d" tempNodeId) (ChordNode tempNodeId)
+                    firstNodeRef <! FindSuccessor(tempNodeId, tempNodeRef)
                 
             | _ -> ()
 
