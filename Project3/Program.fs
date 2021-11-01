@@ -39,6 +39,8 @@ type MainCommands =
     | PredecessorResponse of (int*IActorRef)
     | PredecessorRequest
     | SuccessorOf of (int*IActorRef)
+    | KeyLookup of (int*int)
+    | StartRequests
 
 let chordSystem = ActorSystem.Create("ChordSystem", configuration)
 let mutable mainActorRef = null
@@ -98,7 +100,7 @@ let ChordNode (myId:int) (mailbox:Actor<_>) =
                 if predecessorOfSuccessor <> myId then
                     mySuccessor <- predecessorOfSuccessor
                     mySuccessorRef <- itsRef
-                printfn "\n %d p = %d s = %d" myId myPredecessor mySuccessor
+                //printfn "\n %d p = %d s = %d" myId myPredecessor mySuccessor
                 // Notify mysuccessor
                 mySuccessorRef <! Notify(myId, mailbox.Self)
                 
@@ -110,16 +112,26 @@ let ChordNode (myId:int) (mailbox:Actor<_>) =
                 mySuccessor <- isId
                 mySuccessorRef <- isRef
                 chordSystem.Scheduler.ScheduleTellRepeatedly(TimeSpan.FromSeconds(0.0),TimeSpan.FromMilliseconds(StabilizeCycletimeMs), mailbox.Self, Stabilize)
-                printfn "\n %d found successor = %d" myId mySuccessor
+                //printfn "\n %d found successor = %d" myId mySuccessor
                 mySuccessorRef <! Notify(myId, mailbox.Self)
+            
+            | KeyLookup(key, hopCount) ->
+                if mySuccessor < myId && (key > myId || key < mySuccessor) then 
+                    //seekerRef <! SuccessorOf(mySuccessor, mySuccessorRef)
+                    printfn "\n %d key will be at %d node with hops = %d" key mySuccessor hopCount
+                elif key <= mySuccessor && key > myId then 
+                    // <! SuccessorOf(mySuccessor, mySuccessorRef)
+                    printfn "\n %d key will be at %d node with hops = %d" key mySuccessor hopCount
+                else 
+                    mySuccessorRef <! KeyLookup(key, hopCount + 1)
 
             | FindSuccessor(newId, seekerRef) ->
                 if mySuccessor < myId && (newId > myId || newId < mySuccessor) then 
                     seekerRef <! SuccessorOf(mySuccessor, mySuccessorRef)
-                    printfn "\n %d (last node) Successor of %d is %d" myId newId mySuccessor
+                    //printfn "\n %d (last node) Successor of %d is %d" myId newId mySuccessor
                 elif newId <= mySuccessor && newId > myId then 
                     seekerRef <! SuccessorOf(mySuccessor, mySuccessorRef)
-                    printfn "\n %d Successor of %d is %d" myId newId mySuccessor
+                    //printfn "\n %d Successor of %d is %d" myId newId mySuccessor
                 else 
                     mySuccessorRef <! FindSuccessor(newId, seekerRef)
                     // CLOSEST PRECEDING NODE
@@ -134,12 +146,12 @@ let ChordNode (myId:int) (mailbox:Actor<_>) =
         }
     loop()
 
-
 let MainActor (mailbox:Actor<_>) =    
     let mutable firstNodeId = 0
     let mutable secondNodeId = 0
     let mutable tempNodeId = 0
     let mutable tempNodeRef = null
+    let mutable tempKey = 0
 
     let rec loop () = 
         actor {
@@ -148,9 +160,11 @@ let MainActor (mailbox:Actor<_>) =
             match message with 
             | StartAlgorithm(numNodes, numRequests) ->
                 firstNodeId <- Random().Next(hashSpace)
+                printfn "\n\n ADDING %d" firstNodeId
                 firstNodeRef <- spawn chordSystem (sprintf "%d" firstNodeId) (ChordNode firstNodeId)
                 // Second Node
                 secondNodeId <- Random().Next(hashSpace)
+                printfn "\n\n ADDING %d" secondNodeId
                 secondNodeRef <- spawn chordSystem (sprintf "%d" secondNodeId) (ChordNode secondNodeId)
                 firstNodeRef <! Create(secondNodeId, secondNodeRef)
                 secondNodeRef <! Create(firstNodeId, firstNodeRef)
@@ -161,6 +175,16 @@ let MainActor (mailbox:Actor<_>) =
                     printfn "\n\n ADDING %d" tempNodeId
                     tempNodeRef <- spawn chordSystem (sprintf "%d" tempNodeId) (ChordNode tempNodeId)
                     firstNodeRef <! FindSuccessor(tempNodeId, tempNodeRef)
+                
+                printfn "\n Ring stabilized"
+                System.Threading.Thread.Sleep(8000)
+                mainActorRef <! StartRequests
+
+            | StartRequests ->
+                for x in 1..numRequests do
+                    tempKey <- Random().Next(1, hashSpace)
+                    firstNodeRef <! KeyLookup(tempKey, 1)
+                    System.Threading.Thread.Sleep(8000)
                 
             | _ -> ()
 
