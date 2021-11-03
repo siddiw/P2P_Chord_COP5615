@@ -39,12 +39,12 @@ let mutable mainActorRef = null
 
 let mutable numNodes = 0
 let mutable numRequests = 0
-let mutable m =6
+let mutable m = 7
 let mutable firstNodeId = 0
 let mutable firstNodeRef = null
 let mutable secondNodeRef = null
-let StabilizeCycletimeMs = 50.0
-let FixFingersCycletimeMs = 250.0
+let StabilizeCycletimeMs = 100.0
+let FixFingersCycletimeMs = 300.0
 
 let mutable hashSpace = pown 2 m |> int
 
@@ -71,13 +71,13 @@ let PrinterActor (mailbox: Actor<_>) =
 
             match message with 
             | FoundKey (hopCount) ->
-                printfn "\n FoundKey = %d" hopCount
                 hopCountSum <- hopCountSum + hopCount
                 requestsCount <- requestsCount + 1
+                printfn "\n %d FoundKey = %d" requestsCount hopCount
 
                 if requestsCount = endCondition then 
                     let avgHopCount = float(hopCountSum)/float(requestsCount)
-                    printfn "\n AVERAGE HOPCOUNT = %.2f" avgHopCount
+                    printfn "\n ***** AVERAGE HOPCOUNT = %.2f" avgHopCount
             | _ -> ()
 
             return! loop()
@@ -216,13 +216,15 @@ let ChordNode (myId:int) (mailbox:Actor<_>) =
             | StartLookups(numRequests) ->
                 printf "\n %d Starting lookups" myId
                 let mutable tempKey = 0
-                if mySuccessor <> firstNodeId then 
-                    mySuccessorRef <! StartLookups(numRequests)
+
                 for x in 1..numRequests do
                     tempKey <- Random().Next(1, hashSpace)
                     mailbox.Self <! KeyLookup(tempKey, 1, myId)
+                    printfn "\n %d req key = %d" myId tempKey
                     System.Threading.Thread.Sleep(800)
 
+                if mySuccessor <> firstNodeId then 
+                    mySuccessorRef <! StartLookups(numRequests)
 
             | FindNewNodeSuccessor(newId, seekerRef) ->
                 if mySuccessor < myId && (newId > myId || newId < mySuccessor) then 
