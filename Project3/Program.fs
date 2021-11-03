@@ -18,21 +18,6 @@ let configuration =
 
 let chordSystem = ActorSystem.Create("ChordSystem", configuration)
 
-// Tracks and prints average hop count 
-let PrinterActor (mailbox: Actor<_>) =
-    let mutable coins = 0L
-
-    let rec loop () =
-        actor {
-            let! (message: string) = mailbox.Receive()
-            coins <- coins + 1L
-            printf "%d %s\n" coins message
-            return! loop ()
-        }
-    loop ()
-
-let printerRef = spawn chordSystem "PrinterActor" PrinterActor   
-
 type MainCommands =
     | StartAlgorithm of (int*int)
     | Create of (int*IActorRef)
@@ -47,8 +32,8 @@ type MainCommands =
     | FindithSuccessor of (int*int*IActorRef)
     | FoundFingerEntry of (int*int*IActorRef)
     | StartLookups of (int)
+    | FoundKey of (int)
     
-
 
 let mutable mainActorRef = null
 
@@ -65,15 +50,41 @@ let mutable hashSpace = pown 2 m |> int
 let updateElement index element list = 
   list |> List.mapi (fun i v -> if i = index then element else v)
 
-//updateElement 4 40 [ 0 .. 9 ]
-
-
 type FingerTableEntry(x:int, y:IActorRef) as this =
     let id = x
     let idRef = y
     member this.GetId() = x
     member this.GetRef() = y
 
+
+// Tracks and prints average hop count 
+let PrinterActor (mailbox: Actor<_>) =
+    let mutable hopCountSum = 0
+    let mutable requestsCount = 0
+    let endCondition = numNodes * numRequests
+
+    let rec loop () =
+        actor {
+            let! (message) = mailbox.Receive()
+            let sender = mailbox.Sender()
+
+            match message with 
+            | FoundKey (hopCount) ->
+                hopCountSum <- hopCountSum + hopCount
+                requestsCount <- requestsCount + 1
+
+                if requestsCount = endCondition then 
+                    let avgHopCount = float(hopCountSum)/float(requestsCount)
+                    printfn "\n AVERAGE HOPCOUNT = %.2f" avgHopCount
+            | _ -> ()
+
+            return! loop()
+
+        }
+    loop ()
+
+
+let printerRef = spawn chordSystem "PrinterActor" PrinterActor  
 
 
 let ChordNode (myId:int) (mailbox:Actor<_>) =    
