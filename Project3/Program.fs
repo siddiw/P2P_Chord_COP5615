@@ -40,6 +40,7 @@ let mutable mainActorRef = null
 let mutable numNodes = 0
 let mutable numRequests = 0
 let mutable m =6
+let mutable firstNodeId = 0
 let mutable firstNodeRef = null
 let mutable secondNodeRef = null
 let StabilizeCycletimeMs = 50.0
@@ -70,6 +71,7 @@ let PrinterActor (mailbox: Actor<_>) =
 
             match message with 
             | FoundKey (hopCount) ->
+                printfn "\n FoundKey = %d" hopCount
                 hopCountSum <- hopCountSum + hopCount
                 requestsCount <- requestsCount + 1
 
@@ -187,31 +189,34 @@ let ChordNode (myId:int) (mailbox:Actor<_>) =
          
             | KeyLookup(key, hopCount, initiatedBy) ->
                 if mySuccessor < myId && (key > myId || key < mySuccessor) then
-                    printfn "\n initiatedBy = %d key = %d at = %d hopCount = %d" initiatedBy key mySuccessor hopCount
+                    printfn "\n iBy = %d key = %d at = %d hc = %d" initiatedBy key mySuccessor hopCount
+                    printerRef <! FoundKey(hopCount)
                 elif myId > key then 
                     let ithRef = myFingerTable.[m-1].GetRef()
                     ithRef <! KeyLookup(key, hopCount + 1, initiatedBy)
                 elif key <= mySuccessor && key > myId then 
-                    printfn "\n initiatedBy = %d key = %d at = %d hopCount = %d" initiatedBy key mySuccessor hopCount
-                else 
+                    printfn "\n iby = %d key = %d at = %d hc = %d" initiatedBy key mySuccessor hopCount
+                    printerRef <! FoundKey(hopCount)
+                else
                     let mutable Break = false 
-                    let mutable i = m-1
-                    while not Break do  
-                        let ithFinger = myFingerTable.[i].GetId()
-                        if (ithFinger > myId && ithFinger <= key) then 
-                            let ithRef = myFingerTable.[i].GetRef()
-                            ithRef <! KeyLookup(key, hopCount + 1, initiatedBy)
-                            Break <- true 
-                        i <- i - 1
-                        if i < 0 then   
+                    let mutable x = m
+                    while not Break do
+                        x <- x - 1
+                        if x < 0 then   
                             mySuccessorRef <! KeyLookup(key, hopCount + 1, initiatedBy)
                             Break <- true
-                    done  
+                        else
+                            let ithFinger = myFingerTable.[x].GetId()
+                            if (ithFinger > myId && ithFinger <= key) then 
+                                let ithRef = myFingerTable.[x].GetRef()
+                                ithRef <! KeyLookup(key, hopCount + 1, initiatedBy)
+                                Break <- true                       
+                    done 
                 
             | StartLookups(numRequests) ->
                 printf "\n %d Starting lookups" myId
                 let mutable tempKey = 0
-                if mySuccessor <> firstNode then 
+                if mySuccessor <> firstNodeId then 
                     mySuccessorRef <! StartLookups(numRequests)
                 for x in 1..numRequests do
                     tempKey <- Random().Next(1, hashSpace)
@@ -236,7 +241,6 @@ let ChordNode (myId:int) (mailbox:Actor<_>) =
     loop()
 
 let MainActor (mailbox:Actor<_>) =    
-    let mutable firstNodeId = 0
     let mutable secondNodeId = 0
     let mutable tempNodeId = 0
     let mutable tempNodeRef = null
