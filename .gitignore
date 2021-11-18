@@ -25,3 +25,5 @@ hs_err_pid*
 # Ignore bld and obj
 Project3/bin
 Project3/obj
+.fake
+.ionide

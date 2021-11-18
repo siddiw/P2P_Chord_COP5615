@@ -4,7 +4,6 @@ open Akka.Actor
 open Akka.FSharp
 open Akka.Configuration
 open System.Collections.Generic
-open ChordNode
 open System.Security.Cryptography
 open System.Text
 
@@ -41,7 +40,7 @@ let mutable mainActorRef = null
 
 let mutable numNodes = 0
 let mutable numRequests = 0
-let mutable m = 16
+let mutable m = 20
 let mutable firstNodeId = 0
 let mutable firstNodeRef = null
 let mutable secondNodeRef = null
@@ -286,13 +285,13 @@ let MainActor (mailbox:Actor<_>) =
                 secondNodeRef <! Create(firstNodeId, firstNodeRef)
 
                 for x in 3..numNodes do
-                    System.Threading.Thread.Sleep(1000)
+                    System.Threading.Thread.Sleep(300)
                     //tempNodeId <- Random().Next(1, hashSpace)
                     tempNodeId <- [ 1 .. hashSpace ]
                         |> List.filter (fun x -> (not (list.Contains(x))))
                         |> fun y -> y.[Random().Next(y.Length - 1)]
                     list.Add(tempNodeId)
-                    printfn "\n\n ADDING %d" tempNodeId
+                    printfn "\n\n%d ADDING %d" x tempNodeId
                     tempNodeRef <- spawn chordSystem (sprintf "%d" tempNodeId) (ChordNode tempNodeId)
                     firstNodeRef <! FindNewNodeSuccessor(tempNodeId, tempNodeRef)  
                 
